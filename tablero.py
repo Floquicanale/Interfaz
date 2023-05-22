@@ -83,10 +83,11 @@ class Ui_MainWindow(object):
         print("paso por enabled", current_state)     
         
     def start(self):
+        freq = 1000
         if self.button_count>0:
             self.timerA = QtCore.QTimer()
             self.timerA.timeout.connect(self.enabled)
-            self.timerA.start(1000)
+            self.timerA.start(freq)
             print("entro a start")
             self.button_count -= 1
 
