@@ -67,7 +67,7 @@ class Ui_MainWindow(object):
         self.lcdNumber.display(self.button_count)
         self.plus.clicked.connect(self.clicked)
         self.minus.clicked.connect(self.clicked2)
-        self.pushButton2.clicked.connect(self.start)
+        self.pushButton2.clicked.connect(self.begin)
 
 
     def retranslateUi(self, MainWindow):
@@ -78,21 +78,23 @@ class Ui_MainWindow(object):
         self.pushButton2.setText(_translate("MainWindow", "Start"))
 
     def enabled(self):
-        current_state = self.bo.isVisible()
-        self.bo.setVisible(not current_state)
-        print("paso por enabled", current_state)     
-        
-    def start(self):
-        freq = 1000
         if self.button_count>0:
-            self.timerA = QtCore.QTimer()
-            self.timerA.timeout.connect(self.enabled)
-            self.timerA.start(freq)
-            print("entro a start")
+            current_state = self.bo.isVisible()
+            self.bo.setVisible(not current_state)
+            print("paso por enabled", current_state) 
             self.button_count -= 1
-
+            self.lcdNumber.display(self.button_count)
         else:
-            print("ya ta")
+            print("ya ta")  
+          
+        
+    def begin(self):
+        freq = 1000
+        self.timerA = QtCore.QTimer()
+        self.timerA.timeout.connect(self.enabled)
+        self.timerA.start(freq)
+        print("entro a begin")
+        
     
     def clicked(self):
         self.button_count += 25
