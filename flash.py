@@ -25,11 +25,28 @@ class Ui_MainWindow(object):
         self.ka.setText("")
         self.ka.setPixmap(QtGui.QPixmap("blanco.png"))
         self.ka.setObjectName("ka")
+
         self.bo = QtWidgets.QLabel(self.centralwidget)
         self.bo.setGeometry(screen_geometry)
         self.bo.setText("")
         self.bo.setPixmap(QtGui.QPixmap("negro.png"))
         self.bo.setObjectName("bo")
+
+        self.plus = QtWidgets.QPushButton(self.centralwidget)
+        self.plus.setGeometry(QtCore.QRect(screen_geometry.width()-190, 400, 75*2, 23*2))
+        self.plus.setObjectName("plus")
+
+        self.minus = QtWidgets.QPushButton(self.centralwidget)
+        self.minus.setGeometry(QtCore.QRect(screen_geometry.width()-190, 600, 75*2, 23*2))
+        self.minus.setObjectName("minus")
+
+        self.pushButton2 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton2.setGeometry(QtCore.QRect(screen_geometry.width()-190, 100, 150, 50))
+        self.pushButton2.setObjectName("pushButton2")
+
+        self.lcdNumber = QtWidgets.QLCDNumber(self.centralwidget)
+        self.lcdNumber.setGeometry(QtCore.QRect(screen_geometry.width()-190, 500, 64*2, 23*2))
+        self.lcdNumber.setObjectName("lcdNumber")
         
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
@@ -43,34 +60,75 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
+        self.button_count = 150
+
+        self.lcdNumber.display(self.button_count)
+        self.plus.clicked.connect(self.clicked)
+        self.minus.clicked.connect(self.clicked2)
+        self.pushButton2.clicked.connect(self.begin)
+
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        self.plus.setText(_translate("MainWindow", "+"))
+        self.minus.setText(_translate("MainWindow", "-"))
+        self.pushButton2.setText(_translate("MainWindow", "Start"))
+
 
     def enabled(self):
-        current_state = self.bo.isVisible()
-        self.bo.setVisible(not current_state)
-        print("paso por enabled", current_state)
-        '''
-        time.sleep(0.1)
-        self.ka.setVisible(current_state)
-        print("paso por enabled", current_state)
-        '''
+        freq2 = 100 #tiempo que esta prendido el blanco
+        if self.button_count>0:
+            self.bo.setVisible(False)
+            print("paso por enabled") 
+            self.timerB = QtCore.QTimer()
+            self.timerB.timeout.connect(self.disabled)
+            self.timerB.start(freq2)
+            self.button_count -= 1
+            self.lcdNumber.display(self.button_count)
+        else:
+            print("ya ta")  
+            self.timerA.stop()
+
+    def disabled(self):
+        self.bo.setVisible(True)
+        print("paso por disabled") 
         
-    def start(self):
+        
+
+    def begin(self):
+        freq = 1000 #tiempo que esta prendido el negro
         self.timerA = QtCore.QTimer()
         self.timerA.timeout.connect(self.enabled)
-        self.timerA.start(1000)
-        print("entro a start")
+        self.timerA.start(freq)
+        print("entro a begin")
+        
+    
+    def clicked(self):
+        self.button_count += 25
+        print(self.button_count)
+        self.lcdNumber.display(self.button_count)
 
+    def clicked2(self):
+        self.button_count -= 25
+        print(self.button_count)
+        self.lcdNumber.display(self.button_count)
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self, parent=None):
+        super(MainWindow, self).__init__(parent)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Escape or event.key() == QtCore.Qt.Key_Space:
+            self.showNormal()
 
 
 if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)
-    MainWindow = QtWidgets.QMainWindow()
-    ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
-    MainWindow.show()
-    ui.start()
+    window = MainWindow()
+      
+    window.showFullScreen()
+    app.installEventFilter(window)
     sys.exit(app.exec_())
