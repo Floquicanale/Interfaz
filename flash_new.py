@@ -99,7 +99,7 @@ class Ui_MainWindow(object):
         self.pushButtonConnect.setText(_translate("MainWindow", "Conectar Cyton"))
 
     def enabled(self):
-        freq2=100
+        freq2=5
         if self.button_count>0:
             self.bo.setVisible(False)
             print("paso por enabled") 
@@ -128,7 +128,7 @@ class Ui_MainWindow(object):
  
     def begin(self):
         self.board.start_stream(900000) #arranca la cyton
-        freq = 900
+        freq = 995
         self.timerA = QtCore.QTimer()
         self.timerA.timeout.connect(self.enabled)
         self.timerA.start(freq)
@@ -140,11 +140,11 @@ class Ui_MainWindow(object):
         BoardShim.enable_dev_board_logger()
         params = BrainFlowInputParams()
         #params.serial_port = '/dev/ttyUSB0'
-        params.serial_port = 'COM12'
+        params.serial_port = 'COM8'
         #params.timeout = 0
         #params.file = ''
-        board_id = BoardIds.SYNTHETIC_BOARD.value
-        #board_id = BoardIds.CYTON_BOARD.value
+        #board_id = BoardIds.SYNTHETIC_BOARD.value
+        board_id = BoardIds.CYTON_BOARD.value
         self.board = BoardShim(board_id, params)
         self.board.prepare_session()
 

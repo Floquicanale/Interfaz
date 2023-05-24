@@ -132,11 +132,11 @@ class Ui_MainWindow(object):
         BoardShim.enable_dev_board_logger()
         params = BrainFlowInputParams()
         #params.serial_port = '/dev/ttyUSB0'
-        params.serial_port = 'COM12'
+        params.serial_port = 'COM8'
         #params.timeout = 0
         #params.file = ''
-        board_id = BoardIds.SYNTHETIC_BOARD.value
-        #board_id = BoardIds.CYTON_BOARD.value
+        #board_id = BoardIds.SYNTHETIC_BOARD.value
+        board_id = BoardIds.CYTON_BOARD.value
         self.board = BoardShim(board_id, params)
         self.board.prepare_session()
 
