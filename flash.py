@@ -85,6 +85,7 @@ class Ui_MainWindow(object):
             self.timerB.start(freq2)
             self.button_count -= 1
             self.lcdNumber.display(self.button_count)
+            
         else:
             print("ya ta")  
             self.timerA.stop()

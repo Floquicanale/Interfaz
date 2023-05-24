@@ -120,7 +120,7 @@ class Ui_MainWindow(object):
  
     def begin(self):
         self.board.start_stream(900000) #arranca la cyton
-        freq = 250
+        freq = 500
         self.timerA = QtCore.QTimer()
         self.timerA.timeout.connect(self.enabled)
         self.timerA.start(freq)

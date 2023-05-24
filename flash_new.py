@@ -99,18 +99,26 @@ class Ui_MainWindow(object):
         self.pushButtonConnect.setText(_translate("MainWindow", "Conectar Cyton"))
 
     def enabled(self):
+        freq2=100
         if self.button_count>0:
-            self.board.insert_marker(1)
-            current_state = self.bo.isVisible()
-            self.bo.setVisible(not current_state)
-            #print("paso por enabled", current_state) 
+            self.bo.setVisible(False)
+            print("paso por enabled") 
+            self.timerB = QtCore.QTimer()
+            self.timerB.timeout.connect(self.disabled)
+            self.timerB.start(freq2)
             self.button_count -= 1
             self.lcdNumber.display(self.button_count)
+            self.board.insert_marker(1)
+            
         else:
             self.timerA.stop()
             self.board.stop_stream()
             data = self.board.get_board_data()
             DataFilter.write_file(data, 'Signal-EEG-flash.csv', 'a')
+        
+    def disabled(self):
+        self.bo.setVisible(True)
+        print("paso por disabled") 
         
     def stopTimer(self):
         self.timerA.stop()
@@ -120,7 +128,7 @@ class Ui_MainWindow(object):
  
     def begin(self):
         self.board.start_stream(900000) #arranca la cyton
-        freq = 250
+        freq = 900
         self.timerA = QtCore.QTimer()
         self.timerA.timeout.connect(self.enabled)
         self.timerA.start(freq)
