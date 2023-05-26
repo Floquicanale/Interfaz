@@ -29,7 +29,7 @@ picos = []
 
 # Configuración en la visualización
 VentanaTiempo = 10  # Define la ventana de tiempo que se visualiza en tiempo real
-TiempoFinal = 20  # Define el tiempo total de adquisición
+TiempoFinal = 50 # Define el tiempo total de adquisición
 
 # Configuración de la figura
 plt.ion()
@@ -59,6 +59,7 @@ try:
     while run:
         # Leer una línea completa de datos hasta encontrar \n
         linea = ard.readline().decode().strip()
+        print(linea)
         data = float(linea)
 
         # Se asignan los datos a las listas para graficar
@@ -88,6 +89,7 @@ try:
 
         # Detectar los picos QRS
         new_peaks = np.where(averaged_signal > threshold)[0]
+        print("nuevo pico: ", new_peaks)
         picos.extend(new_peaks)  # Guardar los nuevos picos
 
         # Actualizar la gráfica
