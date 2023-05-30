@@ -98,8 +98,8 @@ try:
         ecg_buffer = np.append(ecg_buffer, data)
         l = len(ecg_buffer)
 
-        if(l>4000):
-            ecg_buffer = ecg_buffer[1999:] #elimino la ultima ventana
+        if(time.time() - start_time and l>2100):
+            ecg_buffer = ecg_buffer[100:] #elimino los primeros valores
             filtrada = QRS_detector.pasabanda(ecg_buffer)
 
 except KeyboardInterrupt:
