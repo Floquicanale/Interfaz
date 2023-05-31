@@ -1,3 +1,4 @@
+from ipaddress import summarize_address_range
 import serial, time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,35 +22,37 @@ class Pan_Tom_QRS():
       y(nT) = 2y(nT - T) - y(nT - 2T) + x(nT) - 2x(nT - 6T) + x(nT - 12T)
 
     Ecuacion recursiva del pasaaltos:
-      y(nT) = 32x(nT - 16T) - y(nT - T) - x(nT) + x(nT - 32T)
+      y(nT) = 32x(nT - 16T) - [y(nT - T) + x(nT) - x(nT - 32T)]
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      El corte inferior es de 5Hz el superior en 11 Hz la ganancia de 32 para el pasaaltos y 36 pasabajos.
     '''
-        # Initialize result
+        # El resultado empieza siendo nada
         result = None
 
-        # Create a copy of the input signal
+        # La copia de la señal va a ser y
         y = x.copy()
         
-        # Apply the low pass filter using the equation given
+        # Aplicamoes el pasabajos de segundo orden 
         for index in range(len(x)):
-            y[index] = x[index]
+            y[index] = x[index] #vendria a ser la parte del x(nT)
 
             if (index >= 1):
-                y[index] += 2*y[index-1]
+                y[index] += 2*y[index-1] #primer termino
 
             if (index >= 2):
-                y[index] -= y[index-2]
+                y[index] -= y[index-2] #segundo
 
             if (index >= 6):
-                y[index] -= 2*x[index-6]
+                y[index] -= 2*x[index-6] #cuerto
 
             if (index >= 12):
-                y[index] += x[index-12] 
+                y[index] += x[index-12] #ultimo
             
-        # Copy the result of the low pass filter
         result = y.copy()
-        # Apply the high pass filter using the equation given
+        # Aplicamos el filtro pasaaltos
         for index in range(len(x)):
-            result[index] = -1*y[index]
+            result[index] = -1*y[index] #vendria a ser el -x(nT)
 
             if (index >= 1):
                 result[index] -= result[index-1]
@@ -60,49 +63,225 @@ class Pan_Tom_QRS():
             if (index >= 32):
                 result[index] += y[index-32]
 
-        # Normalize the result from the high pass filter
+        # Normalizando el valor de la salida del filtro
         max_val = max(max(result),-min(result))
         result = result/max_val
 
         return result
     
+    def derivada(self, x):
+        '''
+    Filtro Derivativo 
+    :param signal: señal de entrada 
+    :return: señal derivada
+
+    Metodología:
+    Usamos un filtro derivativo de 5 puntos para obtener la pendiente de los picos. 
+    El gráfico del filtro es lineal hasta los 30 Hz lo que lo 
+    aproxima a una derivada ideal.
+
+    Ecuacion recursiva del integrador:
+      y(nT) = (1/8T)[-x(nT - 2T) - 2x(nT - T) + 2x(nT + T) + x(nT + 2T)]
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      '''
+        
+        #Mismo procedimiento que para los otros filtros
+
+        result = x.copy()
+
+        #Aplicamos el filtro
+        for index in range(len(x)):
+            result[index] = 0 #empieza siendo cero en todas partes
+
+            if (index >= 1):
+                result[index] -= 2*x[index-1]
+            
+            if (index >= 2):
+                result[index] -= x[index-2]
+            
+            if (index >=2 and index <= len(x)-3):
+                result[index] += x[index+2]
+
+            if (index >=2 and index <= len(x)-2):
+                result[index] += 2*x[index + 1]
+
+            result[index] = result[index]/8
+
+        return result
+    
+    def cuadrado(self, x):
+        '''
+    Elevar al cuadrado 
+    :param signal: señal de entrada 
+    :return: señal elevada al cuadrado
+
+    Metodología:
+    Se eleva al cuadrado la señal para quedarnos con todos valores positivos
+
+    Ecuacion:
+      y(nT) = [x(nT)]^2
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      '''
+        
+        result = x.copy()
+
+        for index in range(len(x)):
+            result[index] = x[index]**2
+        
+        return result
+    
+    def integrador(self, x, fs):
+        '''
+    Integrador de ventana móvil
+    :param signal: señal de entrada 
+    :return: señal integrada
+
+    Metodología:
+    La idea es ver la duración de la onda. Por lo general el largo de la ventena debería ser
+    aproximadamente el máximo valor del largo de un QRS. 
+    Hay que buscarlo empíricamente, para el paper usado como bibliografía usan Fs = 200 Hz
+    y la ventana de 30 muestras (150 ms). 
+
+    Ecuacion de integrador con ventana móvil:
+      y(nT) = 1/N [x(nT - (N-1)T) + x(nT - (N-2)T) + ... + x(nT)]
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      '''
+        largo_ventana = 0.150 #esta en segundos chequear empiricamente
+        result = x.copy()
+        ventana = round(largo_ventana*fs)
+        suma = 0
+
+        #calculo de la suma para los primeros N terminos, todavia no alcanza para restar nada
+        for i in range(ventana):
+            suma += x[i]/ventana
+            result[i] = suma
+
+        for index in range(ventana, len(x)):
+            suma += x[index]/ventana
+            suma -= x[index-ventana]/ventana
+            result[index] = suma
+
+        return result
+
+    def resolver(self, x, fs):
+
+        # Bandpass Filter
+        global bpass
+        bpass = self.pasabanda(x.copy())
+
+        # Derivative Function
+        global der
+        der = self.derivada(bpass.copy())
+
+        # Squaring Function
+        global sqr
+        sqr = self.cuadrado(der.copy())
+
+        # Moving Window Integration Function
+        global mwin
+        mwin = self.integrador(sqr.copy(), fs)
+
+        return mwin
 
 
 '''
 Codigo principal
 Se usa un ciclo while para tomar datos de la señal a la cual se le aplica recursivamente Pan_Tom_QRS.
-Primero hay que tomar un segmento de la señal y hacerle el procedimiento, este mismo cachito se guarda para recursividad
+Primero hay que tomar un segmento de la señal y hacerle el procedimiento, este mismo cachito se guarda para recursividad.
+La frecuencia de muestreo recomendada para el análisis de señales ECG suele estar en el rango de 200 a 500 Hz. 
+La ventana de búfer debe ser lo suficientemente grande como para capturar un complejo QRS completo, incluyendo su parte ascendente y descendente. 
+La duración típica de un complejo QRS está en el rango de 80 a 120 ms
+
 '''
 # Inicializar variables
 ard = serial.Serial('COM5',9600)
-fs = 9600  
+fs = 250 #Hz
 
-ecg_buffer = np.zeros(2000)  # Búfer para almacenar los últimos 2000 puntos de ECG
-filtrada = np.zeros(2000)
+largo_ventana = fs*0.3
+ecg_buffer = np.zeros(int(largo_ventana))  # Buffer para almacenar los puntos de ECG
+output = ecg_buffer.copy()
 picos = []
+timepoints = []
+ydata=[]
+threshold_factor = 0.09  # Factor para calcular el umbral adaptativo (10% del máximo)
 
-long_ventana = 10
 start_time = time.time()
-TiempoFinal = 50 # Define el tiempo total de adquisición
+TiempoFinal = 50 # Define el tiempo total de adquisición en segundos
 run = True
 
 QRS_detector = Pan_Tom_QRS()
+
+# Configuración de la figura
+VentanaTiempo = 10
+plt.ion()
+figura1 = plt.figure()
+figura1.suptitle('Gráfica en tiempo real', fontsize='16', fontweight='bold')
+plt.xlabel('Tiempo (s)', fontsize='14')
+plt.ylabel('Amplitud', fontsize='14')
+plt.axes().grid(True)
+# Configuración de la curva
+line1, = plt.plot(ydata, linestyle='-')
+#line2, = plt.plot(ydata, linestyle='-')
+
+plt.xlim([0, VentanaTiempo])
+n=0
 
 try:
     while run:
         # Leer una línea completa de datos hasta encontrar \n
         linea = ard.readline().decode().strip()
-        print(linea)
+        print(linea, "count: ", n)
         data = float(linea)
+        ydata.append(data)
+        timepoints.append(time.time() - start_time)
+        current_time = timepoints[-1]
 
         ecg_buffer = np.append(ecg_buffer, data)
         l = len(ecg_buffer)
 
-        if(time.time() - start_time and l>2100):
-            ecg_buffer = ecg_buffer[100:] #elimino los primeros valores
-            filtrada = QRS_detector.pasabanda(ecg_buffer)
+        if(l>150):
+            print("entre al if")
+            print(ecg_buffer)
+            ecg_buffer = ecg_buffer[75:] #elimino los primeros valores
+            output = QRS_detector.resolver(ecg_buffer, fs)
+            print(output)
+        
+            # Calcular el umbral adaptativo
+            threshold = threshold_factor * np.mean(output)
+
+            # Detectar los picos QRS
+            new_peaks = np.where(output > threshold)[0]
+            if new_peaks not in picos:
+                print("nuevo pico: ", new_peaks)
+                picos.extend(new_peaks)  # Guardar los nuevos picos
+
+        # Actualizar la gráfica
+        line1.set_xdata(timepoints)
+        line1.set_ydata(ydata)
+
+        #line2.set_xdata(timepoints)
+        #line2.set_ydata(output)
+
+        plt.ylim([min(ydata) - 5, max(ydata) + 5])
+
+        # Actualizar la ventana de observación de la gráfica
+        if current_time > VentanaTiempo:
+            plt.xlim([current_time - VentanaTiempo, current_time])
+
+        if timepoints[-1] > TiempoFinal:
+            run = False
+
+        n+=1
+        # Actualizar la gráfica
+        plt.draw()
+        plt.pause(0.001)
+
 
 except KeyboardInterrupt:
     # Manejar la interrupción del teclado para detener la adquisición de datos
     ard.close()
+    
 
