@@ -3,6 +3,7 @@ import serial, time
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
+import csv
 
 
 class Pan_Tom_QRS():
@@ -186,6 +187,41 @@ class Pan_Tom_QRS():
 
         return mwin
 
+class Cardiac_Freq():
+    def frequency(self, peaks, fs):
+        distance = 0
+        prom = 0
+        for i in range(len(peaks[0])):
+            if(i+1<len(peaks[0])):
+                distance = peaks[0][i+1]-peaks[0][i]
+                prom += distance
+        prom = prom/(len(peaks[0])-1)
+        print(prom)
+        frec = 60/(prom/fs)
+        return frec
+    
+    def sound(self, peaks)
+    def annotation(self, peaks, count)
+        with open(file_path, 'r') as csv_file:
+            reader = csv.reader(csv_file)
+            rows = list(reader)
+
+        with open(file_path, 'w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+
+            # Write the first row (header) as it is
+            writer.writerow(rows[0])
+
+            # Write the second row with the annotations at the specific position
+            second_row = rows[1]
+            for i in range(len(peaks[0])):
+                index = peaks[0][i]+count*500
+                if second_row[index] == '': #Chequea que no haya nada en la columna
+                    second_row[index] = 1
+                
+
+            writer.writerow(second_row)
+
 
 '''
 Codigo principal
@@ -204,8 +240,10 @@ largo_ventana = fs*0.3
 ecg_buffer = np.zeros(int(largo_ventana))  # Buffer para almacenar los puntos de ECG
 output = ecg_buffer.copy()
 picos = []
+guardapicos=[]
 timepoints = []
 ydata=[]
+count=0
 threshold_factor = 0.09  # Factor para calcular el umbral adaptativo (10% del máximo)
 
 start_time = time.time()
@@ -239,24 +277,32 @@ try:
         timepoints.append(time.time() - start_time)
         current_time = timepoints[-1]
 
-        ecg_buffer = np.append(ecg_buffer, data)
+        #Primer llenado del buffer 5 segundos +2 segundos que se van a ir actualizando
         l = len(ecg_buffer)
+        
+        if(l<1750):
+            ecg_buffer = np.append(ecg_buffer, data)
 
-        if(l>150):
+        #Cuando se actualiza el buffer se agregan 2 segundos de data
+        elif(l==1750):
             print("entre al if")
             print(ecg_buffer)
-            ecg_buffer = ecg_buffer[75:] #elimino los primeros valores
             output = QRS_detector.resolver(ecg_buffer, fs)
             print(output)
-        
-            # Calcular el umbral adaptativo
-            threshold = threshold_factor * np.mean(output)
 
-            # Detectar los picos QRS
-            new_peaks = np.where(output > threshold)[0]
-            if new_peaks not in picos:
-                print("nuevo pico: ", new_peaks)
-                picos.extend(new_peaks)  # Guardar los nuevos picos
+            #umbral adaptativo
+            umbral = 0.7*max(output)
+        
+            # Busco los picos
+            picos = sp.signal.find_peaks(output, height=umbral, distance=fs*0.67)
+
+            #Frecuencia cardiaca y esas cosas
+            frec = Cardiac_Freq.frequency(picos, fs)
+            #ACA HAY QUE CAMBIAR LO QUE MUESTRA EL DISPLAY
+            Cardiac_Freq.annotation() #anota en el csv que hubo un pico 
+
+            ecg_buffer = ecg_buffer[500:] #elimino los primeros valores
+            count+=1
 
         # Actualizar la gráfica
         line1.set_xdata(timepoints)
