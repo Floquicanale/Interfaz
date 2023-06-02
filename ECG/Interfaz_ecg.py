@@ -1,10 +1,13 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtGui import QFont, QColor
 import pyqtgraph as pg
 from pyqtgraph import PlotWidget, plot
 import sys
 import serial
 from scipy.signal import butter, filtfilt
+import numpy as np
+from brainflow.data_filter import DataFilter
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -27,15 +30,31 @@ class Ui_MainWindow(object):
         self.start_register.setObjectName("start_register")
         self.start_register.setCheckable(True)
 
+        #Boton de iniciar/parar grabación de datos (toggle)
+        self.record = QtWidgets.QPushButton(self.graphWidget)
+        self.record.setGeometry(QtCore.QRect(screen_geometry.width()-190, 200, 150, 50))
+        self.record.setObjectName("record")
+        self.record.setCheckable(True)
+
+        #Display frecuencia cardíaca
+        self.label = QtWidgets.QLineEdit(self.graphWidget)
+        self.label.setGeometry(QtCore.QRect(screen_geometry.width()-350, 550, 300, 50))
+        self.label.setObjectName("label")   
+        self.LCD = QtWidgets.QLCDNumber(self.graphWidget)
+        self.LCD.setGeometry(QtCore.QRect(screen_geometry.width()-350, 600, 300, 100))
+        self.LCD.setObjectName("LCD")      
+
         #Retranslate
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
         #Connect
         self.start_register.clicked.connect(self.start)
+        self.start_register.clicked.connect(self.PanTom)
+        self.record.clicked.connect(self.rec)
 
-        # Variables para el gráfico
-        self.max_samples = 1000 #Me quedo con 200 muestras
+        #Variables para el gráfico
+        self.max_samples = 1000 #Me quedo con 1000 muestras
         self.data = []
         self.curve = self.graphWidget.plot()
         self.curve = self.graphWidget.plot(pen=pg.mkPen(color='r', width=2))
@@ -49,24 +68,49 @@ class Ui_MainWindow(object):
 
         #Seteo iniciar/parar registro
         self.start_register.setText(_translate("MainWindow", "Iniciar registro"))
-        self.start_register.setStyleSheet("QPushButton {background-color:green}")
+        font = QFont("Arial", 12, QFont.Bold)
+        self.start_register.setFont(font)
+
+        #Seteo iniciar/parar grabación de datos
+        self.record.setText(_translate("MainWindow", "Grabar registro"))
+        self.record.setStyleSheet("QPushButton {background-color:red}")
+        self.record.setFont(font)
+
+        #Seteo label frec cardiaca
+        font = QFont("Arial", 14, QFont.Bold)
+        self.label.setFont(font)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setText(_translate("MainWindow", "FRECUENCIA CARDÍACA"))
+        self.label.setStyleSheet("QLabel {background-color: black; color: white;}")
     
     def start(self):
 
         if self.start_register.isChecked(): 
             self.start_register.setText("Detener registro")
-            self.start_register.setStyleSheet("QPushButton {background-color:red}")
             try:
-                self.serial_port = serial.Serial('COM3', 9600)  # Ajusta el puerto y la velocidad de acuerdo a tu configuración
+                self.serial_port = serial.Serial('COM3', 9600)  # Ajustá el puerto y la velocidad de acuerdo a tu configuración
                 self.read_serial_data()  # Iniciar la lectura de datos
             except serial.SerialException:
                 print("No se pudo abrir el puerto COM3")
         else:
             self.start_register.setText("Iniciar registro")
-            self.start_register.setStyleSheet("QPushButton {background-color:green}")
             if self.serial_port is not None:
                 self.serial_port.close()
                 self.serial_port = None
+        return
+
+    def rec(self):
+
+        if self.record.isChecked(): 
+            self.record.setText("Detener grabación")
+        else:
+            self.record.setText("Iniciar grabación")
+        return 
+
+    def PanTom(self):
+        #Esta funcion, o alguna auxiliar, actualiza el valor del LCD de frec cardiaca.
+        #Lo clave en 60 para probar
+        self.LCD.display(60)
         return
     
     def read_serial_data(self):
