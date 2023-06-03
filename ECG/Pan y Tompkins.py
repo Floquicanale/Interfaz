@@ -65,8 +65,10 @@ class Pan_Tom_QRS():
                 result[index] += y[index-32]
 
         # Normalizando el valor de la salida del filtro
+        '''
         max_val = max(max(result),-min(result))
         result = result/max_val
+        '''
 
         return result
     
@@ -191,16 +193,24 @@ class Cardiac_Freq():
     def frequency(self, peaks, fs):
         distance = 0
         prom = 0
-        for i in range(len(peaks[0])):
-            if(i+1<len(peaks[0])):
-                distance = peaks[0][i+1]-peaks[0][i]
-                prom += distance
-        prom = prom/(len(peaks[0])-1)
-        print(prom)
-        frec = 60/(prom/fs)
+        frec=0
+        if len(peaks[0])==0:
+            pass
+        else:
+            for i in range(len(peaks[0])):
+                print("entre al for")
+                if(i+1<len(peaks[0])):
+                    distance = peaks[0][i+1]-peaks[0][i]
+                    prom += distance
+            print(len(peaks[0]))
+            prom = prom/(len(peaks[0])-1)
+            print(prom)
+            frec = 60/(prom/fs)
+        
         return frec
     
-    def sound(self, peaks)
+    #def sound(self, peaks)
+    '''
     def annotation(self, peaks, count)
         with open(file_path, 'r') as csv_file:
             reader = csv.reader(csv_file)
@@ -221,6 +231,7 @@ class Cardiac_Freq():
                 
 
             writer.writerow(second_row)
+            '''
 
 
 '''
@@ -236,21 +247,21 @@ La duración típica de un complejo QRS está en el rango de 80 a 120 ms
 ard = serial.Serial('COM5',9600)
 fs = 250 #Hz
 
-largo_ventana = fs*0.3
-ecg_buffer = np.zeros(int(largo_ventana))  # Buffer para almacenar los puntos de ECG
-output = ecg_buffer.copy()
+largo_ventana = fs*3
+ecg_buffer = []  # Buffer para almacenar los puntos de ECG
+output = []
 picos = []
 guardapicos=[]
 timepoints = []
 ydata=[]
-count=0
 threshold_factor = 0.09  # Factor para calcular el umbral adaptativo (10% del máximo)
 
 start_time = time.time()
-TiempoFinal = 50 # Define el tiempo total de adquisición en segundos
+TiempoFinal = 100 # Define el tiempo total de adquisición en segundos
 run = True
 
 QRS_detector = Pan_Tom_QRS()
+Cardio = Cardiac_Freq()
 
 # Configuración de la figura
 VentanaTiempo = 10
@@ -281,30 +292,32 @@ try:
         l = len(ecg_buffer)
         
         if(l<1750):
-            ecg_buffer = np.append(ecg_buffer, data)
+            ecg_buffer.append(data)
 
         #Cuando se actualiza el buffer se agregan 2 segundos de data
-        elif(l==1750):
+        elif(l>=1750):
             print("entre al if")
             print(ecg_buffer)
             output = QRS_detector.resolver(ecg_buffer, fs)
-            print(output)
 
             #umbral adaptativo
             umbral = 0.7*max(output)
+            print(umbral)
         
             # Busco los picos
             picos = sp.signal.find_peaks(output, height=umbral, distance=fs*0.67)
+            print(picos)
 
             #Frecuencia cardiaca y esas cosas
-            frec = Cardiac_Freq.frequency(picos, fs)
+            frecuencia = Cardio.frequency(picos, 250)
+            print(frecuencia)
             #ACA HAY QUE CAMBIAR LO QUE MUESTRA EL DISPLAY
-            Cardiac_Freq.annotation() #anota en el csv que hubo un pico 
+            #Cardiac_Freq.annotation() #anota en el csv que hubo un pico 
 
             ecg_buffer = ecg_buffer[500:] #elimino los primeros valores
-            count+=1
 
         # Actualizar la gráfica
+        '''
         line1.set_xdata(timepoints)
         line1.set_ydata(ydata)
 
@@ -312,6 +325,7 @@ try:
         #line2.set_ydata(output)
 
         plt.ylim([min(ydata) - 5, max(ydata) + 5])
+        '''
 
         # Actualizar la ventana de observación de la gráfica
         if current_time > VentanaTiempo:
@@ -321,9 +335,11 @@ try:
             run = False
 
         n+=1
+        '''
         # Actualizar la gráfica
         plt.draw()
         plt.pause(0.001)
+        '''
 
 
 except KeyboardInterrupt:

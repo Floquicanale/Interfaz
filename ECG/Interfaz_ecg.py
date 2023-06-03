@@ -6,6 +6,7 @@ from pyqtgraph import PlotWidget, plot
 import sys
 import serial
 from scipy.signal import butter, filtfilt
+import scipy as sp
 import numpy as np
 from brainflow.data_filter import DataFilter
 
@@ -62,6 +63,10 @@ class Ui_MainWindow(object):
         #Conexión con Arduino
         self.serial_port = None
 
+        #Variables para Pan y Tom
+        self.fs=250
+        self.ecg_buffer = np.zeros(int(self.fs*0.2))  # Buffer para almacenar los puntos de ECG
+
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
@@ -88,10 +93,10 @@ class Ui_MainWindow(object):
         if self.start_register.isChecked(): 
             self.start_register.setText("Detener registro")
             try:
-                self.serial_port = serial.Serial('COM3', 9600)  # Ajustá el puerto y la velocidad de acuerdo a tu configuración
+                self.serial_port = serial.Serial('COM5', 9600)  # Ajustá el puerto y la velocidad de acuerdo a tu configuración
                 self.read_serial_data()  # Iniciar la lectura de datos
             except serial.SerialException:
-                print("No se pudo abrir el puerto COM3")
+                print("No se pudo abrir el puerto COM5")
         else:
             self.start_register.setText("Iniciar registro")
             if self.serial_port is not None:
@@ -106,12 +111,6 @@ class Ui_MainWindow(object):
         else:
             self.record.setText("Iniciar grabación")
         return 
-
-    def PanTom(self):
-        #Esta funcion, o alguna auxiliar, actualiza el valor del LCD de frec cardiaca.
-        #Lo clave en 60 para probar
-        self.LCD.display(60)
-        return
     
     def read_serial_data(self):
         line = self.serial_port.readline().decode('utf-8').strip()
@@ -119,6 +118,7 @@ class Ui_MainWindow(object):
         try:
             value = float(line)
             self.update_graph([value])
+            self.PanTom(value)
         except ValueError:
             pass
 
@@ -155,6 +155,234 @@ class Ui_MainWindow(object):
         filtered_data = filtfilt(b, a, data)
 
         return filtered_data
+    
+    def PanTom(self, valor):
+        l = len(self.ecg_buffer)
+
+        if(l<1750):
+            print("menor a 1750")
+            self.ecg_buffer = np.append(self.ecg_buffer, valor)
+
+        #Cuando se actualiza el buffer se agregan 2 segundos de data
+        elif(l>=1750):
+            print("mayor a 1750")
+            output = self.resolver(self.ecg_buffer, self.fs)
+
+            #umbral adaptativo
+            umbral = 0.7*max(output)
+        
+            # Busco los picos
+            picos = sp.signal.find_peaks(output, height=umbral, distance=self.fs*0.67)
+
+            #Frecuencia cardiaca y esas cosas
+            frecuencia = self.frequency(picos, self.fs)
+            self.LCD.display(round(frecuencia,0))
+            #ACA HAY QUE CAMBIAR LO QUE MUESTRA EL DISPLAY
+            #Cardiac_Freq.annotation() #anota en el csv que hubo un pico 
+
+            self.ecg_buffer = self.ecg_buffer[500:] #elimino los primeros pip valores
+
+        
+        return
+
+    def pasabanda(self, x):
+        '''
+    Filtro PasaBnada
+    :param signal: señal de entrada 
+    :return: señal procesada
+
+    Metodología:
+    Usamos un filtro pasabanda para atenuar el ruido. 
+    Necesitamos solo las señales con frecuencia de 5 a 15 Hz, 
+    para quedarnos con estas primero usamos un pasabajos y luego un pasaaltos en cadena.
+
+    Ecuacion recursiva del pasabajos:
+      y(nT) = 2y(nT - T) - y(nT - 2T) + x(nT) - 2x(nT - 6T) + x(nT - 12T)
+
+    Ecuacion recursiva del pasaaltos:
+      y(nT) = 32x(nT - 16T) - [y(nT - T) + x(nT) - x(nT - 32T)]
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      El corte inferior es de 5Hz el superior en 11 Hz la ganancia de 32 para el pasaaltos y 36 pasabajos.
+    '''
+        # El resultado empieza siendo nada
+        result = None
+
+        # La copia de la señal va a ser y
+        y = x.copy()
+        
+        # Aplicamoes el pasabajos de segundo orden 
+        for index in range(len(x)):
+            y[index] = x[index] #vendria a ser la parte del x(nT)
+
+            if (index >= 1):
+                y[index] += 2*y[index-1] #primer termino
+
+            if (index >= 2):
+                y[index] -= y[index-2] #segundo
+
+            if (index >= 6):
+                y[index] -= 2*x[index-6] #cuerto
+
+            if (index >= 12):
+                y[index] += x[index-12] #ultimo
+            
+        result = y.copy()
+        # Aplicamos el filtro pasaaltos
+        for index in range(len(x)):
+            result[index] = -1*y[index] #vendria a ser el -x(nT)
+
+            if (index >= 1):
+                result[index] -= result[index-1]
+
+            if (index >= 16):
+                result[index] += 32*y[index-16]
+
+            if (index >= 32):
+                result[index] += y[index-32]
+
+        # Normalizando el valor de la salida del filtro
+        max_val = max(max(result),-min(result))
+        result = result/max_val
+
+        return result
+    
+    def derivada(self, x):
+        '''
+    Filtro Derivativo 
+    :param signal: señal de entrada 
+    :return: señal derivada
+
+    Metodología:
+    Usamos un filtro derivativo de 5 puntos para obtener la pendiente de los picos. 
+    El gráfico del filtro es lineal hasta los 30 Hz lo que lo 
+    aproxima a una derivada ideal.
+
+    Ecuacion recursiva del integrador:
+      y(nT) = (1/8T)[-x(nT - 2T) - 2x(nT - T) + 2x(nT + T) + x(nT + 2T)]
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      '''
+        
+        #Mismo procedimiento que para los otros filtros
+
+        result = x.copy()
+
+        #Aplicamos el filtro
+        for index in range(len(x)):
+            result[index] = 0 #empieza siendo cero en todas partes
+
+            if (index >= 1):
+                result[index] -= 2*x[index-1]
+            
+            if (index >= 2):
+                result[index] -= x[index-2]
+            
+            if (index >=2 and index <= len(x)-3):
+                result[index] += x[index+2]
+
+            if (index >=2 and index <= len(x)-2):
+                result[index] += 2*x[index + 1]
+
+            result[index] = result[index]/8
+
+        return result
+    
+    def cuadrado(self, x):
+        '''
+    Elevar al cuadrado 
+    :param signal: señal de entrada 
+    :return: señal elevada al cuadrado
+
+    Metodología:
+    Se eleva al cuadrado la señal para quedarnos con todos valores positivos
+
+    Ecuacion:
+      y(nT) = [x(nT)]^2
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      '''
+        
+        result = x.copy()
+
+        for index in range(len(x)):
+            result[index] = x[index]**2
+        
+        return result
+    
+    def integrador(self, x, fs):
+        '''
+    Integrador de ventana móvil
+    :param signal: señal de entrada 
+    :return: señal integrada
+
+    Metodología:
+    La idea es ver la duración de la onda. Por lo general el largo de la ventena debería ser
+    aproximadamente el máximo valor del largo de un QRS. 
+    Hay que buscarlo empíricamente, para el paper usado como bibliografía usan Fs = 200 Hz
+    y la ventana de 30 muestras (150 ms). 
+
+    Ecuacion de integrador con ventana móvil:
+      y(nT) = 1/N [x(nT - (N-1)T) + x(nT - (N-2)T) + ... + x(nT)]
+    
+      fuente: https://www.robots.ox.ac.uk/~gari/teaching/cdt/A3/readings/ECG/Pan+Tompkins.pdf
+      '''
+        largo_ventana = 0.150 #esta en segundos chequear empiricamente
+        result = x.copy()
+        ventana = round(largo_ventana*fs)
+        suma = 0
+
+        #calculo de la suma para los primeros N terminos, todavia no alcanza para restar nada
+        for i in range(ventana):
+            suma += x[i]/ventana
+            result[i] = suma
+
+        for index in range(ventana, len(x)):
+            suma += x[index]/ventana
+            suma -= x[index-ventana]/ventana
+            result[index] = suma
+
+        return result
+
+    def resolver(self, x, fs):
+
+        # Bandpass Filter
+        global bpass
+        bpass = self.pasabanda(x.copy())
+
+        # Derivative Function
+        global der
+        der = self.derivada(bpass.copy())
+
+        # Squaring Function
+        global sqr
+        sqr = self.cuadrado(der.copy())
+
+        # Moving Window Integration Function
+        global mwin
+        mwin = self.integrador(sqr.copy(), fs)
+
+        return mwin
+
+    def frequency(self, peaks, fs):
+        distance = 0
+        prom = 0
+        frec=0
+        if len(peaks[0])==0:
+            pass
+        else:
+            for i in range(len(peaks[0])):
+                if(i+1<len(peaks[0])):
+                    distance = peaks[0][i+1]-peaks[0][i]
+                    prom += distance
+            print(len(peaks[0]))
+            if(len(peaks[0])>1):
+                prom = prom/(len(peaks[0])-1)
+                frec = 60/(prom/fs)
+                print(frec)
+        
+        return frec
+   
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
