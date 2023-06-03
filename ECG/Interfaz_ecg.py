@@ -9,6 +9,8 @@ from scipy.signal import butter, filtfilt
 import scipy as sp
 import numpy as np
 from brainflow.data_filter import DataFilter
+import threading
+import logging
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -96,7 +98,7 @@ class Ui_MainWindow(object):
                 self.serial_port = serial.Serial('COM5', 9600)  # Ajustá el puerto y la velocidad de acuerdo a tu configuración
                 self.read_serial_data()  # Iniciar la lectura de datos
             except serial.SerialException:
-                print("No se pudo abrir el puerto COM5")
+                logging.debug("No se pudo abrir el puerto COM5")
         else:
             self.start_register.setText("Iniciar registro")
             if self.serial_port is not None:
@@ -160,12 +162,10 @@ class Ui_MainWindow(object):
         l = len(self.ecg_buffer)
 
         if(l<1750):
-            print("menor a 1750")
             self.ecg_buffer = np.append(self.ecg_buffer, valor)
 
         #Cuando se actualiza el buffer se agregan 2 segundos de data
         elif(l>=1750):
-            print("mayor a 1750")
             output = self.resolver(self.ecg_buffer, self.fs)
 
             #umbral adaptativo
@@ -375,11 +375,9 @@ class Ui_MainWindow(object):
                 if(i+1<len(peaks[0])):
                     distance = peaks[0][i+1]-peaks[0][i]
                     prom += distance
-            print(len(peaks[0]))
             if(len(peaks[0])>1):
                 prom = prom/(len(peaks[0])-1)
                 frec = 60/(prom/fs)
-                print(frec)
         
         return frec
    
