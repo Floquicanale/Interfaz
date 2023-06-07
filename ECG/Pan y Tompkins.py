@@ -203,7 +203,8 @@ class Cardiac_Freq():
                     distance = peaks[0][i+1]-peaks[0][i]
                     prom += distance
             print(len(peaks[0]))
-            prom = prom/(len(peaks[0])-1)
+            if(len(peaks[0]>1)):
+                prom = prom/(len(peaks[0])-1)
             print(prom)
             frec = 60/(prom/fs)
         
@@ -251,10 +252,8 @@ largo_ventana = fs*3
 ecg_buffer = []  # Buffer para almacenar los puntos de ECG
 output = []
 picos = []
-guardapicos=[]
 timepoints = []
 ydata=[]
-threshold_factor = 0.09  # Factor para calcular el umbral adaptativo (10% del máximo)
 
 start_time = time.time()
 TiempoFinal = 100 # Define el tiempo total de adquisición en segundos
