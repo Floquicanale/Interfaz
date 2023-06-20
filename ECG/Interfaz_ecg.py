@@ -14,7 +14,6 @@ import numpy as np
 from brainflow.data_filter import DataFilter
 from PyQt5.QtCore import pyqtSignal, QObject
 import logging
-import threading
 import time
 import csv
 import os
@@ -22,31 +21,29 @@ import os
 class PanTomWorker(QThread):
     update_frec = pyqtSignal(float)  # Señal emitida cuando tenemos frecuencia
 
-    def __init__(self, valor, ecg_buffer, parent=None):
+    def __init__(self, ecg_buffer, parent=None):
         super().__init__(parent)
         self.fs=250
         self.ecg_buffer = ecg_buffer  # Buffer para almacenar los puntos de ECG
-        self.valor = valor
-        #self.mw = Ui_MainWindow()
-        #self.mw.new_value_signal.connect(self.run)
+        offset = np.mean(self.ecg_buffer)
+        self.señal = self.ecg_buffer - offset
 
     def run(self):
         #print("entre al else")
-        output = self.resolver(self.ecg_buffer, self.fs)
+        output = self.resolver(self.señal, self.fs)
+        output = output.ravel()
 
         #umbral adaptativo
         umbral = 0.7*max(output)
     
         # Busco los picos
-        picos = sp.signal.find_peaks(output, height=umbral, distance=0.67*self.fs) #, distance=80 o distance=0.67fs
+        picos = sp.signal.find_peaks(output, height=umbral, distance=80) #, distance=80 o distance=0.67fs
 
         #Frecuencia cardiaca y esas cosas
         frecuencia = self.frequency(picos, self.fs)
-        #Cardiac_Freq.annotation() #anota en el csv que hubo un pico 
 
         self.update_frec.emit(frecuencia)
-        #print(frecuencia)
-        #print("termine pan y tom")
+
         return
     
     def pasabanda(self, x):
@@ -302,12 +299,12 @@ class Ui_MainWindow(object):
         self.data = np.zeros(int(self.fs*0.2))
         self.n=0
         self.record_flag = False
+        self.frecuencia = 0
 
         #Conexión con Arduino
         self.serial_port = None
 
-        #me dijo chatGPT que haga esto para que no la quede mi hilo
-        self.pan_tom_worker = None  # Member variable to hold the PanTomWorker instance
+        self.pan_tom_worker = None  
 
         '''
         # Especificaciones del filtro
@@ -347,6 +344,7 @@ class Ui_MainWindow(object):
             self.record_flag = True
         else:
             self.record.setText("Iniciar grabación")
+            self.record_flag = False
         return 
 
     def agregar_datos_csv(self, nuevos_datos, nombre_archivo, contador, delimiter=';'):
@@ -355,20 +353,21 @@ class Ui_MainWindow(object):
         nombre_archivo = f'{nombre_base}{contador}{extension}'
 
         # Crear el archivo CSV y escribir los nuevos datos
-        #print(f"Creando archivo CSV: {nombre_archivo}")
         with open(nombre_archivo, 'a', newline='') as archivo_csv:
             if os.stat(nombre_archivo).st_size == 0:  # Verificar si el archivo esta vacio
-                cabecera = ['ecg', 'picos']  # Le pone nombres a las columnas
+                cabecera = ['ecg', 'frecuencia', 'tiempo']  # Le pone nombres a las columnas
                 escritor_csv = csv.writer(archivo_csv, delimiter=delimiter)
                 escritor_csv.writerow(cabecera)
 
             escritor_csv = csv.writer(archivo_csv, delimiter=delimiter)
-            escritor_csv.writerow(nuevos_datos)
-        #print("Datos agregados al archivo CSV.")
+            current_time = time.time() - self.start_time
+            datos=[nuevos_datos, round(self.frecuencia,2), current_time]
+            escritor_csv.writerow(datos)
+
     
     def start(self):
-
         if self.start_register.isChecked(): 
+            self.start_time = time.time()
             self.start_register.setText("Detener registro")
             try:
                 self.serial_port = serial.Serial('COM5', 9600)  # Ajustá el puerto y la velocidad de acuerdo a tu configuración
@@ -384,33 +383,30 @@ class Ui_MainWindow(object):
         return
     
     def read_port(self):
-        #print("entre a read_port")
         line = self.serial_port.readline().decode('utf-8').strip()
         try:
             # Convertir los datos a números 
-            #print("entre al try")
-            val = float(line)
-            self.value = self.notch(val)
+            self.value = float(line)
+            #self.value = self.notch(val)
         except ValueError:
-            #print("entre al except")
             logging.debug("No se pudo leer el dato, verifique la conexión del puerto")
             return
         self.start_tasks()
-        if(self.record_flag): self.agregar_datos_csv([self.value], 'datos.csv', self.n)
+        if(self.record_flag): self.agregar_datos_csv(self.value, 'datos.csv', self.n)
 
         if self.start_register.isChecked():
             QtCore.QTimer.singleShot(0, self.read_port)  # Leer los datos en el siguiente ciclo      
 
     def start_tasks(self):
-        #print("entre a start_tasks")
         #Inicio la clase del hilo
         l = len(self.ecg_buffer)
-        if(l<1000):
+        if(l<1750):
             self.ecg_buffer = np.append(self.ecg_buffer, self.value)
             self.update_graph()
+            
         #Cuando se actualiza el buffer se agregan 2 segundos de data
-        elif(l>=1000):
-            self.pan_tom_worker = PanTomWorker(self.value, self.ecg_buffer)
+        elif(l>=1750):
+            self.pan_tom_worker = PanTomWorker(self.ecg_buffer)
             self.pan_tom_worker.start()
             self.pan_tom_worker.update_frec.connect(self.task_finished)
             self.update_graph()
@@ -418,28 +414,24 @@ class Ui_MainWindow(object):
             self.ecg_buffer = self.ecg_buffer[500:] #elimino los primeros pip valores
 
     def task_finished(self, fr):
-        #print("entre a task_finished")
+        self.frecuencia = fr
         logging.debug("Done")
         self.LCD.display(round(fr,0))
 
     def update_graph(self):
         # Agregar nuevos datos al conjunto de datos
-        #print("entre a update graph")
-        #Pasabandas
-        #filtered_data = self.bp(self.data)
 
         # Limitar el conjunto de datos a `max_samples` muestras
-        #print(len(self.data))
-        if len(self.data) >= self.max_samples+100:
+        self.data= np.append(self.data, self.value)
+        if len(self.data) >= self.max_samples:
             # Actualizar el gráfico
-            self.data = np.append(self.data[100:self.max_samples], self.value)
+            self.data = np.append(self.data[1:self.max_samples], self.value)
+        
+        media = sum(self.data) / len(self.data) if len(self.data) > 0 else 0
+        dato_sin_media = self.data - media
+        
+        self.curve.setData(dato_sin_media)
 
-        elif len(self.data) < self.max_samples+100:
-            self.data = np.append(self.data, self.value)
-        
-        self.curve.setData(self.data)
-        
-        #print("termine update graph")
     '''
     def notch(self, valor):
         vo = self.b[0]*self.vik + self.b[1]*self.vok - self.a[1]*self.vok
